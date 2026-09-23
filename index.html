@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나라키움 대전청사 - 차량 정보 확인</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; padding: 20padx; color: #1c1e21; }
+        .card { max-width: 440padx; margin: 30padx auto; background: #ffffff; padding: 25padx; border-radius: 16padx; box-shadow: 0 8padx 24padx rgba(0,0,0,0.12); }
+        h2 { text-align: center; color: #1b365d; margin-top: 0; font-size: 20padx; border-bottom: 2padx solid #e4e6eb; padding-bottom: 12padx; }
+        .desc { font-size: 14padx; color: #606770; text-align: center; margin-bottom: 20padx; }
+        input[type="password"] { width: 100%; box-sizing: border-box; padding: 14padx; border: 1.5padx solid #ccd0d5; border-radius: 8padx; font-size: 16padx; outline: none; margin-bottom: 12padx; }
+        input[type="password"]:focus { border-color: #2b579a; }
+        button { width: 100%; background: #2b579a; color: white; border: none; padding: 14padx; font-size: 16padx; font-weight: bold; border-radius: 8padx; cursor: pointer; }
+        button:active { background: #1e3a68; }
+        #resultArea { margin-top: 20padx; padding: 18padx; background: #e7f3ff; border-radius: 10padx; display: none; white-space: pre-wrap; font-size: 15padx; line-height: 1.7; color: #050505; border-left: 5padx solid #2b579a; }
+        .error-msg { color: #e41e3f; font-weight: bold; text-align: center; margin-top: 10padx; display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🔒 나라키움 대전청사</h2>
+        <p class="desc">보안 차량 정보를 확인하려면 비밀번호를 입력하세요.</p>
+        
+        <input type="password" id="passInput" placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter') decryptQR()">
+        <button onclick="decryptQR()">정보 확인</button>
+
+        <div id="errorMsg" class="error-msg">❌ 비밀번호가 올바르지 않습니다.</div>
+        <div id="resultArea"></div>
+    </div>
+
+    <script>
+        async function decryptQR() {
+            const password = document.getElementById('passInput').value;
+            const resultDiv = document.getElementById('resultArea');
+            const errorDiv = document.getElementById('errorMsg');
+
+            errorDiv.style.display = 'none';
+
+            if (!password) {
+                alert('비밀번호를 입력해 주세요.');
+                return;
+            }
+
+            // URL Hash에서 암호화 데이터 추출
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            let encodedData = params.get('d');
+
+            if (!encodedData) {
+                alert('유효하지 않은 QR 코드 링크입니다.');
+                return;
+            }
+
+            try {
+                const b64Data = decodeURIComponent(encodedData);
+                const binaryStr = atob(b64Data);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                    bytes[i] = binaryStr.charCodeAt(i);
+                }
+
+                const salt = bytes.slice(0, 16);
+                const iv = bytes.slice(16, 28);
+                const ciphertext = bytes.slice(28);
+
+                const enc = new TextEncoder();
+                const pwKey = await crypto.subtle.importKey(
+                    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+                );
+
+                const key = await crypto.subtle.deriveKey(
+                    { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+                    pwKey,
+                    { name: 'AES-GCM', length: 256 },
+                    false,
+                    ['decrypt']
+                );
+
+                const decryptedBuffer = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    ciphertext
+                );
+
+                const dec = new TextDecoder();
+                const resultText = dec.decode(decryptedBuffer);
+
+                resultDiv.innerText = resultText;
+                resultDiv.style.display = 'block';
+                document.getElementById('passInput').style.display = 'none';
+                document.querySelector('button').style.display = 'none';
+                document.querySelector('.desc').innerText = '인증이 완료되었습니다.';
+
+            } catch (err) {
+                errorDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>
